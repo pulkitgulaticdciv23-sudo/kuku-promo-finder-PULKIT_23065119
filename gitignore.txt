@@ -1,7 +1,14 @@
-# Screenplays, model prompts, and outputs may contain Kuku's confidential material.
+# ============================================================
+# KUKU PROMO FINDER — GITIGNORE
+# ============================================================
+
+# 1. Confidential screenplay inputs and source material
 input_pack/
 inputs/
 data/
+*.zip
+
+# 2. Raw model outputs and confidential evidence
 raw_outputs/
 raw_outputs_local/
 stage2_output/
@@ -10,15 +17,49 @@ cache/
 .cache/
 .runtime/
 
-# Secrets and Python-generated files.
+# 3. Environment variables and secrets
 .env
 .env.*
+!.env.example
+!.env.sample
+
+.streamlit/secrets.toml
+
+# 4. Python virtual environments
 .venv/
 venv/
+env/
+
+# 5. Python cache and compiled files
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.DS_Store
+*$py.class
 
-# Local server logs.
+# 6. Testing and coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 7. IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 8. Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 9. Local application and server logs
 .streamlit-local*.log
+*.log
+
+# 10. Temporary files
+*.tmp
+*.bak
+*.temp
+
+# ============================================================
+# END
+# ============================================================
