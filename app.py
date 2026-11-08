@@ -39,8 +39,9 @@ def _screenplay_diagnostics(episodes: dict) -> dict:
         "dialogue": sum(event.get("type") == "dialogue" for event in events),
         "actions": sum(event.get("type") == "action" for event in events),
         "camera_blocks": sum(event.get("type") == "camera" for event in events),
-        "cut_blocks": sum(event.get("type") == "transition" for event in events),
-        "inline_cut_cues": sum(bool(event.get("cut_cues")) for event in events),
+        # Count each explicit cue once. Transition blocks already carry their
+        # extracted cue, so adding block count + cue count would double-count.
+        "cut_cues": sum(len(event.get("cut_cues", [])) for event in events),
         "sound_fx": sum(event.get("type") == "sound_fx" for event in events),
     }
 
@@ -341,8 +342,8 @@ stat_cols[1].metric("Scenes", parser_stats["scenes"])
 stat_cols[2].metric("Dialogue", parser_stats["dialogue"])
 stat_cols[3].metric("Action", parser_stats["actions"])
 stat_cols[4].metric("Camera", parser_stats["camera_blocks"])
-stat_cols[5].metric("Cut cues", parser_stats["cut_blocks"] + parser_stats["inline_cut_cues"])
-if parser_stats["cut_blocks"] + parser_stats["inline_cut_cues"] == 0:
+stat_cols[5].metric("Cut cues", parser_stats["cut_cues"])
+if parser_stats["cut_cues"] == 0:
     st.markdown('<div class="qc-note">No explicit cut / transition cue was detected in the parsed blocks. The model must not invent shot changes; inspect source labels and parser warnings.</div>', unsafe_allow_html=True)
 else:
     st.markdown('<div class="callout">Source diagnostics are a parser receipt, not a quality score. They confirm which timed elements reached the editorial analysis.</div>', unsafe_allow_html=True)
