@@ -270,7 +270,28 @@ with right_intro:
 
 with st.sidebar:
     st.markdown("### SESSION CONTROL")
-    variant = st.radio("Run label", ["A", "B"], horizontal=True, help="A/B are independent runs for a stability comparison; they are not separate models.")
+    st.markdown("**Choose an analysis pass**")
+    run_choice = st.radio(
+        "Choose run",
+        ["A · First analysis", "B · Repeat analysis"],
+        index=0,
+        label_visibility="collapsed",
+        help="A and B use the same screenplay, Gemini model and scoring settings. They are separate runs for checking how repeatable the shortlist is.",
+    )
+    variant = "A" if run_choice.startswith("A") else "B"
+    if variant == "A":
+        st.info(
+            "**RUN A — Start here**\n\n"
+            "This is the first analysis of your uploaded screenplay. It creates the initial ranked promo shortlist.\n\n"
+            "After A finishes, you can run B to see whether the model selects similar cuts again."
+        )
+    else:
+        st.info(
+            "**RUN B — Repeat the analysis**\n\n"
+            "Run this after A, using the same screenplay and settings. It performs a separate model pass and saves a second shortlist.\n\n"
+            "Then the app compares A and B to show how consistent the selections were. B is not a different model or an improved version."
+        )
+    st.caption("A/B is an experiment label, not a choice of model, edit style or quality level.")
     st.divider()
     st.markdown("**MODEL**")
     st.caption("Gemini configuration · existing API key from Streamlit Secrets")
@@ -341,8 +362,19 @@ for path in sorted(Path(config["raw_outputs_dir"]).glob("run_*/promos.json")):
 saved_choice = st.selectbox("Previously generated runs for this screenplay", list(saved)) if saved else None
 if saved:
     st.caption("Open a previous result or launch a fresh model pass. A fresh run can take several minutes depending on script length and API limits.")
+run_a_label = ui_run_label(upload_hash, config, "A")
+run_a_saved = (Path(config["raw_outputs_dir"]) / f"run_{run_a_label}" / "promos.json").is_file()
+if variant == "B" and not run_a_saved:
+    st.warning("Run A has not been completed for this screenplay and configuration yet. Select Run A first; Run B is the repeat pass used for comparison.")
+
 run_col, saved_col, _ = st.columns([1, 1, 2])
-run_clicked = run_col.button("RUN EDITORIAL ANALYSIS", type="primary", use_container_width=True)
+run_button_label = "START RUN A · FIRST ANALYSIS" if variant == "A" else "START RUN B · REPEAT & COMPARE"
+run_clicked = run_col.button(
+    run_button_label,
+    type="primary",
+    use_container_width=True,
+    disabled=(variant == "B" and not run_a_saved),
+)
 load_clicked = saved_col.button("OPEN SAVED CUTS", disabled=not saved, use_container_width=True)
 
 if run_clicked:
@@ -403,9 +435,23 @@ if other_results.is_file():
     try:
         comparison = compare(results, json.loads(other_results.read_text(encoding="utf-8")))
         overlap = comparison["jaccard_percent"]
-        st.caption(f"Stability check · {comparison['exact_matches']} exact top-10 overlaps · Jaccard {overlap if overlap is not None else 'N/A'}%. This measures repeatability, not editorial quality.")
+        st.markdown("**RUN A / RUN B · REPEATABILITY CHECK**")
+        compare_cols = st.columns(2)
+        compare_cols[0].metric("Exact cuts repeated in both top-10 lists", str(comparison["exact_matches"]))
+        compare_cols[1].metric("Jaccard overlap", f"{overlap:.1f}%" if overlap is not None else "N/A")
+        with st.expander("What does this comparison mean?", expanded=True):
+            st.markdown(
+                "- **Same cuts** counts how many exact episode-and-timestamp selections appear in both top-10 lists.\n"
+                "- **Jaccard overlap** compares the shared cuts with all distinct cuts appearing across the two lists.\n"
+                "- **Higher overlap** means the model repeated more of the same selections. **Lower overlap** means its shortlist changed more between runs.\n\n"
+                "This is a repeatability check only. It does not prove that a promo is good, predict audience performance, or replace an editor's judgement. Similar cuts with slightly different timestamps may also count as different exact cuts."
+            )
     except (OSError, ValueError, KeyError, TypeError):
-        st.caption("The saved runs could not be compared with the same settings.")
+        st.caption("The saved runs could not be compared. Confirm that both runs use the same screenplay and configuration.")
+else:
+    st.caption(
+        "A/B comparison is not available yet. Run A first, then select **B · Repeat analysis** in the sidebar and run the same screenplay again. The comparison will appear here once both runs are saved."
+    )
 
 if not ranked:
     st.warning("No ranked promos were produced. Check the run report and unscored candidate log.")
