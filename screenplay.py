@@ -22,6 +22,80 @@ TIMING_RE = re.compile(
 FILENAME_EPISODE_RE = re.compile(r"episode[-_ ]+(\d+)", re.IGNORECASE)
 
 
+# Editorial transitions are kept separate from dialogue so downstream prompts
+# can reason about authored cuts without mistaking them for a character line.
+_TRANSITION_LABELS = {
+    "CUT", "CUT TO", "CUT TO BLACK", "CUT BACK", "CUT BACK TO",
+    "MATCH CUT", "MATCH CUT TO", "JUMP CUT", "JUMP CUT TO",
+    "SMASH CUT", "SMASH CUT TO", "HARD CUT", "HARD CUT TO",
+    "CUTAWAY", "CUTAWAY TO", "FADE IN", "FADE OUT", "FADE TO BLACK",
+    "DISSOLVE", "DISSOLVE TO", "WIPE", "WIPE TO", "INTERCUT",
+    "INTERCUT WITH", "TRANSITION", "TRANSITIONS", "EDIT", "EDITING",
+    "EDITING NOTE", "SCENE TRANSITION", "CAMERA CUT", "CAMERA CUTS", "CAMERA CUT TO", "CAMERA CUTS TO",
+}
+
+_CUT_CUE_PATTERNS = (
+    r"CAMERA\s+CUTS?\s+TO",
+    r"MATCH\s+CUT(?:\s+TO)?",
+    r"SMASH\s+CUT(?:\s+TO)?",
+    r"JUMP\s+CUT(?:\s+TO)?",
+    r"HARD\s+CUT(?:\s+TO)?",
+    r"CUT\s+BACK\s+TO",
+    r"CUT\s+TO(?:\s+BLACK)?",
+    r"CUTAWAY(?:\s+TO)?",
+    r"FADE\s+(?:IN|OUT|TO(?:\s+BLACK)?)",
+    r"DISSOLVE(?:\s+TO)?",
+    r"WIPE(?:\s+TO)?",
+    r"INTERCUT(?:\s+WITH)?",
+)
+_CUT_CUE_RE = re.compile(r"\b(?:" + "|".join(_CUT_CUE_PATTERNS) + r")\b", re.IGNORECASE)
+
+
+def _normalise_label(label: str) -> str:
+    return " ".join(re.sub(r"[^A-Z0-9]+", " ", label.upper()).split())
+
+
+def _classify_block_label(label: str) -> tuple[str, str | None, str | None, list[str]]:
+    """Classify labelled screenplay blocks without losing their original label."""
+    normalized = _normalise_label(label)
+    if normalized in {"ACTION", "ACTIONS", "ACTION DESCRIPTION", "ACTION DESCRIPTION"}:
+        return "action", None, None, []
+    if normalized in {"SOUND FX", "SOUND EFFECT", "SOUND EFFECTS", "SFX", "AUDIO", "SOUND"}:
+        return "sound_fx", None, None, []
+    if normalized in _TRANSITION_LABELS or normalized.startswith((
+        "MATCH CUT", "JUMP CUT", "SMASH CUT", "HARD CUT", "CUT TO", "CUT BACK",
+        "CUTAWAY", "FADE ", "DISSOLVE", "WIPE ", "INTERCUT", "SCENE TRANSITION",
+    )):
+        return "transition", None, None, []
+    if normalized.startswith(("CAMERA", "SHOT")) or normalized in {
+        "VISUAL", "VISUAL CUE", "VISUAL DIRECTION", "CAMERA DIRECTION", "CAMERA DIRECTIONS",
+        "SHOT DESCRIPTION", "SHOT DIRECTION", "SHOT DIRECTIONS",
+    }:
+        return "camera", None, None, []
+    speaker, emotion, qualifiers = _speaker_parts(label)
+    return "dialogue", speaker, emotion, qualifiers
+
+
+def _extract_cut_cues(label: str, event_type: str, text: str) -> list[str]:
+    """Find explicit edit/transition language only in camera/transition blocks."""
+    if event_type not in {"camera", "transition"}:
+        return []
+    material = f"{label} {text}"
+    cues = []
+    seen = set()
+    for match in _CUT_CUE_RE.finditer(material):
+        cue = " ".join(match.group(0).upper().split())
+        # A label such as MATCH CUT TO and matching wording in the block body
+        # describe one instruction, not two independent edit cues.
+        dedupe_key = re.sub(r"\s+TO$", "", cue)
+        if dedupe_key not in seen:
+            cues.append(cue)
+            seen.add(dedupe_key)
+    if event_type == "transition" and not cues:
+        cues.append(_normalise_label(label))
+    return cues
+
+
 def time_to_us(value: str) -> int:
     """Convert MM:SS[.fraction] to an integer; reject invalid or rounded times."""
     if not isinstance(value, str):
@@ -187,13 +261,8 @@ def _parse_episode(text: str, source: str, warnings: list[str]) -> dict | None:
             if not event_text or current_scene is None:
                 _warning(warnings, source, block_line, f"missing text or scene for {label}; skipped block")
                 continue
-            normalized = label.upper()
-            special = {"CAMERA": "camera", "ACTION": "action", "SOUND FX": "sound_fx"}
-            if normalized in special:
-                event_type, speaker, emotion, qualifiers = special[normalized], None, None, []
-            else:
-                event_type = "dialogue"
-                speaker, emotion, qualifiers = _speaker_parts(label)
+            event_type, speaker, emotion, qualifiers = _classify_block_label(label)
+            cut_cues = _extract_cut_cues(label, event_type, event_text)
             event_number += 1
             episode["events"].append({
                 "event_id": f"E{number:03d}-{event_number:04d}",
@@ -208,6 +277,7 @@ def _parse_episode(text: str, source: str, warnings: list[str]) -> dict | None:
                 "text": event_text,
                 "scene_id": current_scene["scene_id"],
                 "original_label": label,
+                "cut_cues": cut_cues,
                 "source_line": block_line,
             })
             continue
