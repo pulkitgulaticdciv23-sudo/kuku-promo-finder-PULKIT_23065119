@@ -1,0 +1,24 @@
+# Screenplays, model prompts, and outputs may contain Kuku's confidential material.
+input_pack/
+inputs/
+data/
+raw_outputs/
+raw_outputs_local/
+stage2_output/
+evidence/
+cache/
+.cache/
+.runtime/
+
+# Secrets and Python-generated files.
+.env
+.env.*
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+
+# Local server logs.
+.streamlit-local*.log
