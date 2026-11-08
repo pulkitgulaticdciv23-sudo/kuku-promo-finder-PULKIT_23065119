@@ -1,0 +1,19 @@
+{
+  "provider": "ollama_local",
+  "model": "qwen3:4b-instruct",
+  "base_url": "http://127.0.0.1:11434",
+  "api_key_env": null,
+  "episodes_per_minute": 60,
+  "temperature": 0.7,
+  "max_output_tokens": 3072,
+  "context_tokens": 16384,
+  "max_candidates_per_episode": 2,
+  "judge_batch_size": 2,
+  "use_json_mode": true,
+  "timeout_seconds": 1800,
+  "max_429_retries": 4,
+  "max_retry_wait_seconds": 300,
+  "snap_tolerance_seconds": 0.25,
+  "cache_dir": ".cache/llm",
+  "raw_outputs_dir": "raw_outputs_local"
+}

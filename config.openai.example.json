@@ -1,0 +1,16 @@
+{
+  "provider": "openai_compatible",
+  "model": "YOUR_MODEL_NAME",
+  "base_url": "https://YOUR_ENDPOINT/v1",
+  "api_key_env": "OPENAI_API_KEY",
+  "episodes_per_minute": 2,
+  "temperature": 0.2,
+  "max_output_tokens": 8192,
+  "use_json_mode": true,
+  "timeout_seconds": 120,
+  "max_429_retries": 4,
+  "max_retry_wait_seconds": 300,
+  "snap_tolerance_seconds": 0.25,
+  "cache_dir": ".cache/llm",
+  "raw_outputs_dir": "raw_outputs"
+}
