@@ -1,8 +1,9 @@
-"""Local Streamlit interface for the Kuku promo finder."""
+"""Streamlit interface for the Kuku promo finder (local or hosted)."""
 
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import streamlit as st
@@ -16,13 +17,21 @@ from ui_helpers import (load_reviews, review_csv, review_path, save_review,
 
 
 ROOT = Path(__file__).resolve().parent
-CONFIGS = {
-    "Local Ollama — no API key": "config.stage4.local.json",
-    "Gemini — environment key": "config.stage4.gemini.example.json",
-    "OpenAI-compatible — environment key": "config.stage4.openai.example.json",
-}
+# Use the existing Gemini configuration for both the hosted demo and local run.
+# No new provider, model, or API key is introduced here.
+CONFIG_FILE = "config.stage4.gemini.example.json"
 
 st.set_page_config(page_title="Kuku Promo Finder", page_icon="🎬", layout="wide")
+
+# On Streamlit Community Cloud, expose the SAME existing Gemini key through
+# App Settings -> Secrets. Locally, an already-set GEMINI_API_KEY environment
+# variable continues to work. The key is never written into config or source.
+try:
+    _existing_gemini_key = st.secrets.get("GEMINI_API_KEY")
+except Exception:
+    _existing_gemini_key = None
+if _existing_gemini_key:
+    os.environ.setdefault("GEMINI_API_KEY", str(_existing_gemini_key))
 
 # Visual layer only: the existing parsing, model, ranking, review and export logic
 # below remains unchanged.
@@ -240,7 +249,7 @@ st.markdown(
       </p>
       <div class="hero-pills">
         <span class="hero-pill">20–60 SECOND CUTS</span>
-        <span class="hero-pill">LOCAL AI WORKFLOW</span>
+        <span class="hero-pill">GEMINI-POWERED ANALYSIS</span>
         <span class="hero-pill">HUMAN EDITORIAL REVIEW</span>
       </div>
     </div>
@@ -249,18 +258,19 @@ st.markdown(
 )
 
 st.info(
-    "Local review workspace · Model scores are suggestions. Check the screenplay "
+    "The default Gemini option uses the existing API key configured in app Secrets. "
+    "Uploaded screenplay text is sent to Gemini for analysis; upload only material "
+    "you are authorized to process. Model scores are suggestions—review the source "
     "and final video before publishing."
 )
 st.markdown('<div class="section-kicker">01 / Add your screenplay</div>', unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("Settings")
-    selected = st.selectbox("Model configuration", list(CONFIGS))
     variant = st.radio("Run", ["A", "B"], horizontal=True,
                        help="A and B request separate outputs for the stability comparison.")
-    st.caption("Edit the selected configuration file to change the model, endpoint, request rate, or scoring weights.")
-    st.caption("Uploaded scripts and generated outputs are stored on this machine in ignored folders.")
+    st.caption("The app uses the existing Gemini model configuration and API key.")
+    st.caption("Uploads and run artifacts are stored in this app's workspace, not committed to GitHub.")
 
 local_show = ROOT / "input_pack" / "show.zip"
 upload_data = None
@@ -276,7 +286,10 @@ if local_show.is_file():
 if upload_data is None:
     upload = st.file_uploader("Upload a ZIP of screenplay .txt files", type=["zip"])
     if upload is None:
-        st.write("Choose a screenplay ZIP, then select **Find promos**. No key is needed for local Ollama.")
+        st.write(
+            "Choose a screenplay ZIP, then select **Find promos**. The default hosted "
+            "Gemini option uses the existing API key saved in Streamlit Secrets."
+        )
         st.stop()
     upload_data = upload.getvalue()
 
@@ -285,7 +298,7 @@ try:
     episodes, parser_warnings = load_show(source_path)
     if not episodes:
         raise ValueError("No episodes could be parsed. Check that the ZIP contains screenplay .txt files.")
-    config = load_config(ROOT / CONFIGS[selected])
+    config = load_config(ROOT / CONFIG_FILE)
     config["cache_dir"] = str(ROOT / config["cache_dir"])
     config["raw_outputs_dir"] = str(ROOT / config["raw_outputs_dir"])
     source_fingerprint = show_fingerprint(episodes)
@@ -296,7 +309,7 @@ except (ValueError, OSError, ProviderError) as exc:
     st.stop()
 
 st.markdown('<div class="section-kicker">02 / Input validation</div>', unsafe_allow_html=True)
-st.caption(f"Parsed {len(episodes)} episode(s). Run {variant} will use the selected model configuration.")
+st.caption(f"Parsed {len(episodes)} episode(s). Run {variant} will use the configured Gemini model.")
 if parser_warnings:
     with st.expander(f"Parser warnings ({len(parser_warnings)})"):
         for warning in parser_warnings:
