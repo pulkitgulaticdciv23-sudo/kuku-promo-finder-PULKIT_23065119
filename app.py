@@ -11,7 +11,8 @@ import streamlit as st
 from compare_runs import compare
 from llm_client import ProviderError, load_config
 from run_stage4 import execute, show_fingerprint
-from screenplay import load_show
+from screenplay import load_show, show_counts
+from stage4_logic import source_events
 from ui_helpers import (load_reviews, review_csv, review_path, save_review,
                         script_lines, store_upload, table_rows, ui_run_label)
 
@@ -20,6 +21,45 @@ ROOT = Path(__file__).resolve().parent
 # Use the existing Gemini configuration for both the hosted demo and local run.
 # No new provider, model, or API key is introduced here.
 CONFIG_FILE = "config.stage4.gemini.example.json"
+
+
+def _screenplay_diagnostics(episodes: dict) -> dict:
+    events = [event for episode in episodes.values() for event in episode.get("events", [])]
+    return {
+        "episodes": len(episodes),
+        "scenes": sum(len(episode.get("scenes", [])) for episode in episodes.values()),
+        "dialogue": sum(event.get("type") == "dialogue" for event in events),
+        "actions": sum(event.get("type") == "action" for event in events),
+        "camera_blocks": sum(event.get("type") == "camera" for event in events),
+        "cut_blocks": sum(event.get("type") == "transition" for event in events),
+        "inline_cut_cues": sum(bool(event.get("cut_cues")) for event in events),
+        "sound_fx": sum(event.get("type") == "sound_fx" for event in events),
+    }
+
+
+def _promo_source_rows(candidate: dict, episodes: dict) -> list[dict]:
+    rows = []
+    for segment_index, segment in enumerate(candidate.get("segments", []), start=1):
+        episode = episodes[segment["episode"]]
+        scene_by_id = {scene.get("scene_id"): scene for scene in episode.get("scenes", [])}
+        for event in source_events(episode, segment, include_overlaps=True):
+            scene = scene_by_id.get(event.get("scene_id"), {})
+            kind = event.get("type", "unknown")
+            if kind == "dialogue":
+                source_text = f"{event.get('speaker') or 'Character'}: {event.get('text', '')}"
+            else:
+                source_text = event.get("text", "")
+            rows.append({
+                "Segment": segment_index,
+                "Episode": segment["episode"],
+                "Scene": scene.get("heading") or event.get("scene_id"),
+                "Time": f"{event.get('start', '')}–{event.get('end', '')}",
+                "Cue type": kind.replace("_", " ").title(),
+                "Source label": event.get("original_label", ""),
+                "Cut cue": ", ".join(event.get("cut_cues", [])),
+                "Screenplay evidence": source_text,
+            })
+    return rows
 
 st.set_page_config(page_title="Kuku Promo Finder", page_icon="🎬", layout="wide")
 
@@ -243,13 +283,13 @@ st.markdown(
       <div class="hero-eyebrow">AI-assisted editorial workspace</div>
       <h1 class="hero-title">Turn storylines into <span>scroll-stopping promos.</span></h1>
       <p class="hero-subtitle">
-        Find the moment. Capture the hook. Leave viewers wanting more.
-        Explore screenplay-based promo suggestions, inspect the source, and keep
-        the final editorial decision in human hands.
+        Find the moment. Control the reveal. Cut before the payoff.
+        Read dramatic beats, character stakes and unresolved endings from the
+        screenplay, then keep the final editorial decision in human hands.
       </p>
       <div class="hero-pills">
-        <span class="hero-pill">20–60 SECOND CUTS</span>
-        <span class="hero-pill">GEMINI-POWERED ANALYSIS</span>
+        <span class="hero-pill">20–60 SECOND PROMOS</span>
+        <span class="hero-pill">DIRECTOR-STYLE STORY ANALYSIS</span>
         <span class="hero-pill">HUMAN EDITORIAL REVIEW</span>
       </div>
     </div>
@@ -258,10 +298,13 @@ st.markdown(
 )
 
 st.info(
-    "The default Gemini option uses the existing API key configured in app Secrets. "
-    "Uploaded screenplay text is sent to Gemini for analysis; upload only material "
-    "you are authorized to process. Model scores are suggestions—review the source "
-    "and final video before publishing."
+    "This is a screenplay-first editorial tool. It analyses hooks, escalation, "
+    "character stakes, near-misses, reveal control and the cut-out point using "
+    "scripted events and camera directions. It does NOT inspect finished footage: "
+    "actual aspect ratio, pixel resolution, framing, transitions and camera motion "
+    "must be checked against the video. The default Gemini option uses the existing "
+    "API key configured in app Secrets. Uploaded screenplay text is sent to Gemini; "
+    "upload only material you are authorized to process."
 )
 st.markdown('<div class="section-kicker">01 / Add your screenplay</div>', unsafe_allow_html=True)
 
@@ -310,6 +353,15 @@ except (ValueError, OSError, ProviderError) as exc:
 
 st.markdown('<div class="section-kicker">02 / Input validation</div>', unsafe_allow_html=True)
 st.caption(f"Parsed {len(episodes)} episode(s). Run {variant} will use the configured Gemini model.")
+parser_stats = _screenplay_diagnostics(episodes)
+stat_cols = st.columns(6)
+stat_cols[0].metric("Scenes", parser_stats["scenes"])
+stat_cols[1].metric("Dialogue blocks", parser_stats["dialogue"])
+stat_cols[2].metric("Action blocks", parser_stats["actions"])
+stat_cols[3].metric("Camera blocks", parser_stats["camera_blocks"])
+stat_cols[4].metric("Cut / transition blocks", parser_stats["cut_blocks"])
+stat_cols[5].metric("Inline cut cues", parser_stats["inline_cut_cues"])
+st.caption("These counts confirm what the parser extracted from the screenplay. Review warnings and source evidence before trusting a cue.")
 if parser_warnings:
     with st.expander(f"Parser warnings ({len(parser_warnings)})"):
         for warning in parser_warnings:
@@ -393,16 +445,46 @@ if not ranked:
 else:
     st.dataframe(table_rows(ranked), hide_index=True, use_container_width=True)
     st.markdown('<div class="section-kicker">04 / Promo explorer</div>', unsafe_allow_html=True)
-    st.subheader("Review promo details")
+    st.subheader("Director’s editorial review")
     options = [f"#{c['rank']} — {c['candidate_id']} — {c['duration_seconds']:.1f}s" for c in ranked]
     choice = st.selectbox("Choose a promo to inspect", options)
     candidate = ranked[options.index(choice)]
     st.write("**Hook:**", candidate["hook"]["quote"])
-    st.write("**Model's cliffhanger:**", candidate["cliffhanger"])
-    st.write("**Model's reason:**", candidate["why_it_works"])
-    st.write("**Context the model says is needed:**", candidate["context_needed"])
+    st.write("**Cut-out / unresolved question:**", candidate["cliffhanger"])
+    st.write("**Director’s editorial read:**", candidate["why_it_works"])
+    st.write("**First-time viewer context:**", candidate["context_needed"])
+    with st.expander("Scripted shot, cut and story evidence", expanded=True):
+        st.caption("Source-timed blocks inside or crossing this promo's segment boundaries. Camera and cut entries are screenplay cues, not proof of the finished footage.")
+        evidence_rows = _promo_source_rows(candidate, episodes)
+        if evidence_rows:
+            st.dataframe(evidence_rows, hide_index=True, use_container_width=True)
+        else:
+            st.info("No timed source events were found inside these selected segments.")
+        visual_rows = [row for row in evidence_rows if row["Cue type"] in ("Camera", "Transition") or row["Cut cue"]]
+        if visual_rows:
+            st.markdown("**Authored camera / edit cues**")
+            st.dataframe([{key: row[key] for key in ("Episode", "Scene", "Time", "Cue type", "Source label", "Cut cue", "Screenplay evidence")} for row in visual_rows], hide_index=True, use_container_width=True)
+        else:
+            st.caption("No explicit camera or transition cue was parsed in this promo window; the model must not invent one.")
     with st.expander("Score breakdown"):
         st.json(candidate["score_breakdown"], expanded=False)
+    with st.expander("Footage QC — checks that require the actual video"):
+        st.markdown(
+            "- **Aspect ratio and pixels:** verify the delivered frame ratio and native resolution "
+            "against the publishing brief; screenplay text contains no pixel dimensions.\n"
+            "- **Vertical reframing and safe zones:** check that faces, eyelines and critical action "
+            "remain visible after the platform crop and interface overlays.\n"
+            "- **Camera and subject motion:** inspect the actual movement, direction, stability, focus "
+            "and whether the action reads on a phone screen.\n"
+            "- **Transitions and continuity:** verify the real cut, match, movement continuity and "
+            "audio hand-off between adjacent shots.\n"
+            "- **Character / climax reveal:** confirm the intended identity or payoff is visibly "
+            "legible, while the promo still cuts before the story question is resolved."
+        )
+        st.caption(
+            "The narrative reveal logic above is screenplay-derived. This checklist is a human "
+            "footage-review handoff, not an automated video inspection."
+        )
     with st.expander("View the screenplay for this promo"):
         st.caption("Source blocks that cross a cut are marked; the full block may extend outside the clip.")
         st.code("\n".join(script_lines(candidate, episodes)), language=None)
