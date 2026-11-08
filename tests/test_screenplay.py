@@ -88,6 +88,36 @@ class ScreenplayTests(unittest.TestCase):
             self.assertEqual(len(episodes), 1)
             self.assertTrue(any("duplicate episode" in warning for warning in warnings))
 
+    def test_camera_and_transition_blocks_are_not_misclassified_as_dialogue(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = screenplay_text().replace(
+                "**ACTION:**\nStart: (00:00.00) | End: (00:02.00)\nA guard kicks open the door.",
+                "**MATCH CUT TO:**\nStart: (00:00.00) | End: (00:00.50)\nMatch cut from the envelope to Ada's eyes.\n\n"
+                "**CAMERA:**\nStart: (00:00.50) | End: (00:02.00)\nCamera holds on the envelope; CUT TO BLACK.",
+            )
+            (Path(tmp) / "episode-001.txt").write_text(text, encoding="utf-8")
+            episodes, warnings = load_show(tmp)
+            events = episodes[1]["events"]
+            transition = next(event for event in events if event["original_label"] == "MATCH CUT TO")
+            camera = next(event for event in events if event["type"] == "camera" and "Camera holds" in event["text"])
+            self.assertEqual(transition["type"], "transition")
+            self.assertEqual(transition["cut_cues"], ["MATCH CUT TO"])
+            self.assertEqual(camera["cut_cues"], ["CUT TO BLACK"])
+            self.assertIsNone(transition["speaker"])
+            self.assertFalse(any(event.get("speaker") == "MATCH CUT TO" for event in events))
+            self.assertEqual(warnings, [])
+
+    def test_camera_direction_labels_are_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = screenplay_text().replace(
+                "**CAMERA:**", "**CAMERA DIRECTION:**", 1
+            )
+            (Path(tmp) / "episode-001.txt").write_text(text, encoding="utf-8")
+            episodes, _ = load_show(tmp)
+            camera = next(event for event in episodes[1]["events"] if event.get("original_label") == "CAMERA DIRECTION")
+            self.assertEqual(camera["type"], "camera")
+            self.assertEqual(camera["original_label"], "CAMERA DIRECTION")
+
     def test_bad_utf8_is_skipped(self):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "episode-001.txt").write_bytes(b"\xff\xfe")
