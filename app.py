@@ -22,10 +22,237 @@ CONFIGS = {
     "OpenAI-compatible — environment key": "config.stage4.openai.example.json",
 }
 
-st.set_page_config(page_title="Promo Finder", page_icon="🎬", layout="wide")
-st.title("Promo Finder")
-st.caption("Find and review possible 20–60 second promos from screenplay timestamps.")
-st.info("This is a local review tool. Model scores are suggestions; check the script and video before publishing.")
+st.set_page_config(page_title="Kuku Promo Finder", page_icon="🎬", layout="wide")
+
+# Visual layer only: the existing parsing, model, ranking, review and export logic
+# below remains unchanged.
+st.markdown(
+    """
+    <style>
+    :root {
+        color-scheme: dark;
+        --bg: #08080c;
+        --panel: #111117;
+        --panel-2: #17151d;
+        --line: #302532;
+        --pink: #f0a6c8;
+        --pink-strong: #ff8fc3;
+        --text: #f5f1f4;
+        --muted: #aaa1aa;
+    }
+    .stApp {
+        background:
+            radial-gradient(ellipse at 12% 0%, rgba(190, 75, 130, .13), transparent 34%),
+            radial-gradient(ellipse at 92% 8%, rgba(125, 78, 120, .10), transparent 30%),
+            var(--bg);
+        color: var(--text);
+    }
+    [data-testid="stHeader"] { background: rgba(8, 8, 12, .82); }
+    [data-testid="stSidebar"] {
+        background: #0d0c12;
+        border-right: 1px solid var(--line);
+    }
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] label {
+        color: var(--pink);
+    }
+    [data-testid="stAppViewContainer"] .main .block-container {
+        max-width: 1240px;
+        padding-top: 2.2rem;
+        padding-bottom: 3.5rem;
+    }
+    h1, h2, h3 {
+        color: var(--pink) !important;
+        letter-spacing: -0.035em;
+    }
+    p, label, li, [data-testid="stCaptionContainer"] {
+        color: var(--text);
+    }
+    [data-testid="stCaptionContainer"] {
+        color: var(--muted) !important;
+    }
+    .hero-shell {
+        position: relative;
+        overflow: hidden;
+        padding: 1.65rem 1.8rem 1.35rem;
+        margin: 0 0 1.3rem 0;
+        border: 1px solid rgba(240, 166, 200, .25);
+        border-radius: 22px;
+        background:
+            radial-gradient(ellipse at 88% 0%, rgba(240, 166, 200, .14), transparent 42%),
+            linear-gradient(135deg, #17121b 0%, #100f15 58%, #171019 100%);
+        box-shadow: 0 18px 55px rgba(0, 0, 0, .24);
+    }
+    .hero-brand {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        color: #c9bac5;
+        font-size: .72rem;
+        font-weight: 700;
+        letter-spacing: .16em;
+        text-transform: uppercase;
+    }
+    .hero-brand-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 27px;
+        height: 27px;
+        border: 1px solid rgba(255, 143, 195, .55);
+        border-radius: 9px;
+        color: var(--pink-strong);
+        font-size: .9rem;
+        letter-spacing: 0;
+    }
+    .hero-eyebrow {
+        margin: 1.45rem 0 .45rem;
+        color: var(--pink-strong);
+        font-size: .72rem;
+        font-weight: 750;
+        letter-spacing: .18em;
+        text-transform: uppercase;
+    }
+    .hero-title {
+        max-width: 850px;
+        margin: 0;
+        color: #fff7fb !important;
+        font-size: clamp(2rem, 4.2vw, 3.45rem);
+        font-weight: 780;
+        line-height: 1.06;
+        letter-spacing: -.055em;
+    }
+    .hero-title span {
+        color: var(--pink) !important;
+        font-style: italic;
+    }
+    .hero-subtitle {
+        max-width: 720px;
+        margin: .85rem 0 1.35rem;
+        color: #c9bdc7;
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+    .hero-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .55rem;
+    }
+    .hero-pill {
+        padding: .42rem .7rem;
+        border: 1px solid rgba(240, 166, 200, .24);
+        border-radius: 999px;
+        color: #e8cfdd;
+        background: rgba(255, 255, 255, .035);
+        font-size: .67rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+    }
+    .section-kicker {
+        margin: .8rem 0 .45rem;
+        color: var(--pink-strong);
+        font-size: .69rem;
+        font-weight: 800;
+        letter-spacing: .16em;
+        text-transform: uppercase;
+    }
+    [data-testid="stMetric"] {
+        padding: 1rem 1.05rem;
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        background: linear-gradient(145deg, #17141c, #101015);
+    }
+    [data-testid="stMetricLabel"] {
+        color: #c9b9c5 !important;
+    }
+    [data-testid="stMetricValue"] {
+        color: var(--pink) !important;
+    }
+    div.stButton > button,
+    div.stDownloadButton > button,
+    div[data-testid="stFormSubmitButton"] > button {
+        border: 1px solid rgba(240, 166, 200, .48);
+        border-radius: 11px;
+        background: linear-gradient(135deg, #f0a6c8, #d987b3);
+        color: #21121c;
+        font-weight: 750;
+        transition: transform .15s ease, filter .15s ease;
+    }
+    div.stButton > button:hover,
+    div.stDownloadButton > button:hover,
+    div[data-testid="stFormSubmitButton"] > button:hover {
+        border-color: var(--pink-strong);
+        filter: brightness(1.07);
+        transform: translateY(-1px);
+        color: #160e14;
+    }
+    div[data-testid="stFileUploader"] section {
+        border: 1px dashed rgba(240, 166, 200, .42);
+        border-radius: 16px;
+        background: rgba(240, 166, 200, .035);
+    }
+    div[data-testid="stFileUploader"] section:hover {
+        border-color: var(--pink-strong);
+    }
+    [data-testid="stAlert"] {
+        border: 1px solid rgba(240, 166, 200, .25);
+        border-radius: 13px;
+        background: rgba(240, 166, 200, .055);
+    }
+    [data-testid="stExpander"] {
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        background: rgba(255, 255, 255, .018);
+    }
+    [data-testid="stDataFrame"] {
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        overflow: hidden;
+    }
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="input"] > div,
+    div[data-baseweb="textarea"] > div {
+        background: #17141c;
+        border-color: #493342;
+    }
+    hr {
+        border-color: var(--line);
+    }
+    @media (max-width: 700px) {
+        .hero-shell { padding: 1.25rem; border-radius: 16px; }
+        .hero-subtitle { font-size: .9rem; }
+    }
+    </style>
+
+    <div class="hero-shell">
+      <div class="hero-brand">
+        <span class="hero-brand-mark">K</span>
+        <span>Kuku / Promo Finder</span>
+      </div>
+      <div class="hero-eyebrow">AI-assisted editorial workspace</div>
+      <h1 class="hero-title">Turn storylines into <span>scroll-stopping promos.</span></h1>
+      <p class="hero-subtitle">
+        Find the moment. Capture the hook. Leave viewers wanting more.
+        Explore screenplay-based promo suggestions, inspect the source, and keep
+        the final editorial decision in human hands.
+      </p>
+      <div class="hero-pills">
+        <span class="hero-pill">20–60 SECOND CUTS</span>
+        <span class="hero-pill">LOCAL AI WORKFLOW</span>
+        <span class="hero-pill">HUMAN EDITORIAL REVIEW</span>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.info(
+    "Local review workspace · Model scores are suggestions. Check the screenplay "
+    "and final video before publishing."
+)
+st.markdown('<div class="section-kicker">01 / Add your screenplay</div>', unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("Settings")
@@ -68,6 +295,7 @@ except (ValueError, OSError, ProviderError) as exc:
     st.error(str(exc))
     st.stop()
 
+st.markdown('<div class="section-kicker">02 / Input validation</div>', unsafe_allow_html=True)
 st.caption(f"Parsed {len(episodes)} episode(s). Run {variant} will use the selected model configuration.")
 if parser_warnings:
     with st.expander(f"Parser warnings ({len(parser_warnings)})"):
@@ -120,6 +348,7 @@ except (OSError, ValueError) as exc:
     st.stop()
 
 metrics = results.get("metrics", {})
+st.markdown('<div class="section-kicker">03 / Results overview</div>', unsafe_allow_html=True)
 st.subheader("Results")
 if results.get("status") != "completed":
     st.warning("This run is partial. Check the evaluation report for missing episodes or judge results.")
@@ -150,6 +379,7 @@ if not ranked:
     st.warning("There are no ranked promos. Unscored candidates and errors are in the JSON and evaluation report.")
 else:
     st.dataframe(table_rows(ranked), hide_index=True, use_container_width=True)
+    st.markdown('<div class="section-kicker">04 / Promo explorer</div>', unsafe_allow_html=True)
     st.subheader("Review promo details")
     options = [f"#{c['rank']} — {c['candidate_id']} — {c['duration_seconds']:.1f}s" for c in ranked]
     choice = st.selectbox("Choose a promo to inspect", options)
@@ -164,6 +394,7 @@ else:
         st.caption("Source blocks that cross a cut are marked; the full block may extend outside the clip.")
         st.code("\n".join(script_lines(candidate, episodes)), language=None)
 
+    st.markdown('<div class="section-kicker">05 / Editorial review</div>', unsafe_allow_html=True)
     st.subheader("Your review")
     st.caption("Your decisions are saved separately; the original model outputs are not changed.")
     review_file = review_path(ROOT / ".runtime" / "reviews", source_fingerprint, str(active_label))
@@ -195,6 +426,7 @@ else:
     st.download_button("Download my review checklist", data=review_csv(ranked, reviews),
                        file_name=f"run_{active_label}_user_audit.csv", mime="text/csv")
 
+st.markdown('<div class="section-kicker">06 / Export</div>', unsafe_allow_html=True)
 st.subheader("Download results")
 for filename, label_text, mime in (
     ("promos.csv", "Download CSV", "text/csv"),
